@@ -1,0 +1,4 @@
+#!/bin/sh
+
+#open text file in intellij by typing idea file.xml
+open -na "IntelliJ IDEA.app" --args "$@"

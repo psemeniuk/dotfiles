@@ -1,0 +1,22 @@
+[user]
+  name = Patryk Semeniuk
+  email = {{ dotfiles_gitconfig_email }}
+[core]
+  excludesfile = ~/.gitignore_global
+  autocrlf = input
+[init]
+  defaultBranch = master
+[web]
+  browser = google-chrome
+[push]
+	default = current
+	autoSetupRemote = true
+[pull]
+	rebase = true
+[fetch]
+	prune = true
+[pager]
+	branch = false
+
+#TODO aliases
+
