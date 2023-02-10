@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# helpful https://macos-defaults.com/
 
 if [[ $EUID -ne 0 ]]; then
   RUN_AS_ROOT=false
@@ -14,19 +15,56 @@ fi
 # Dock
 ###############################################################################
 
+defaults write com.apple.dock "mineffect" -string "scale"
+defaults write com.apple.dock "mru-spaces" -bool "false"
+defaults write com.apple.dock launchanim -bool "false"
+
 # Set the icon size of Dock items
 defaults write com.apple.dock tilesize -int 40
 defaults write com.apple.dock orientation left
-defaults write com.apple.dock show-recents -bool FALSE
+defaults write com.apple.dock show-recents -bool "false"
 
 # Speed up Mission Control animations
-defaults write com.apple.dock expose-animation-duration -float 0.15
+defaults write com.apple.dock expose-animation-duration -float 0.1
 
 ###############################################################################
 # Misc
 ###############################################################################
+chflags nohidden ~/Library
+
+mkdir -p ~/Documents/Screenshots
+defaults write com.apple.screencapture "location" -string "~/Documents/Screenshots"
+defaults write com.apple.screencapture "disable-shadow" -bool "true"
+
+defaults write com.apple.LaunchServices "LSQuarantine" -bool "false"
+defaults write NSGlobalDomain "ApplePressAndHoldEnabled" -bool "false"
+defaults write com.apple.print.PrintingPrefs "Quit When Finished" -bool "true"
+
+# Finder settings
+defaults write com.apple.finder "QuitMenuItem" -bool "true"
+defaults write com.apple.finder "ShowPathbar" -bool "true"
+defaults write com.apple.finder "FXPreferredViewStyle" -string "Nlsv"
+defaults write NSGlobalDomain "NSTableViewDefaultSizeMode" -int "1"
+defaults write NSGlobalDomain "NSNavPanelExpandedStateForSaveMode" -bool "true"
+defaults write NSGlobalDomain "NSNavPanelExpandedStateForSaveMod2" -bool "true"
+defaults write NSGlobalDomain "NSDocumentSaveNewDocumentsToCloud" -bool "false"
+defaults write NSGlobalDomain "AppleShowAllExtensions" -bool "true"
+defaults write NSGlobalDomain com.apple.springing.delay -float 1.0
+#defaults write NSGlobalDomain "KeyRepeat" -int 50
+#defaults write NSGlobalDomain "InitialKeyRepeat" -int 15
+
+defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 0
+defaults write com.apple.AppleMultitouchTrackpad SecondClickThreshold -int 0
 
 
+#Startup at login
+osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/MiddleClick.app", hidden:true}'
+brew services restart skhd
+brew services restart yabai
+
+#custom apps config
+defaults write com.lwouis.alt-tab-macos.plist "hideWindowlessApps" -string true
+defaults write com.lwouis.alt-tab-macos.plist "holdShortcut" -string "⌘"
 
 ###############################################################################
 # Kill/restart affected applications                                          #
@@ -34,12 +72,11 @@ defaults write com.apple.dock expose-animation-duration -float 0.15
 
 # Restart affected applications if `--no-restart` flag is not present.
 if [[ ! ($* == *--no-restart*) ]]; then
-  for app in "cfprefsd" "Dock" "Finder" "SystemUIServer" "Terminal"; do
+  for app in "cfprefsd" "Dock" "Finder" "SystemUIServer" "AltTab"; do
     killall "${app}" > /dev/null 2>&1
   done
+  open -a AltTab
+
 fi
-
-#TODO mouse & touchpad settings
-
 
 printf "Please log out and log back in to make all settings take effect.\n"

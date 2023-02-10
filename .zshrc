@@ -14,3 +14,9 @@ setopt inc_append_history
 unsetopt share_history
 
 export PATH=$PATH:~/.bin
+
+alias lower="tr '[:upper:]' '[:lower:]'"
+alias upper="tr '[:lower:]' '[:upper:]'"
+alias uuid="uuidgen | lower"
+alias psa="ps aux"
+alias lsa="exa -abghHliS"
