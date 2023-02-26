@@ -7,14 +7,6 @@ ctrl + alt - left : yabai -m window --toggle float --grid 1:2:0:1:1:1 #half left
 ctrl + alt - up : yabai -m window --toggle float --grid 2:1:1:0:1:1 #half up
 ctrl + alt - down : yabai -m window --toggle float --grid 2:1:1:1:1:1 #half down
 
-
-
-#TODO limit to the main display
-#FIXME doesn't work when no focus on any window
-#FIXME doesn't work at fast changes
-#cmd - tab : output=$(yabai -m query --windows) ; modulo=$(expr $(echo $output | jq '. | length')) ; target_key=$(expr 1 + $(echo $output | jq -re '. | sort_by(.title) | to_entries[] | select (.value."has-focus" == true).key + 1') % $modulo - 1); target_id=$(echo $output | jq -re ". | sort_by(.title) | to_entries[] | select(.key == $target_key)".value.id); yabai -m window --focus $target_id #switches to the next window
-#cmd + lshift - tab : output=$(yabai -m query --windows) ; modulo=$(expr $(echo $output | jq '. | length')) ; target_key=$(echo "$(( ($(echo $output | jq -re '. | sort_by(.title) | to_entries[] | select (.value."has-focus" == true).key') + ($modulo - 1)) % $modulo ))"); target_id=$(echo $output | jq -re ". | sort_by(.title) | to_entries[] | select(.key == $target_key)".value.id); yabai -m window --focus $target_id #switches to the previous window
-
 #TODO presets
 
 #synthesize text - skhd -t "hello, worldシ"

@@ -56,15 +56,16 @@ defaults write NSGlobalDomain com.apple.springing.delay -float 1.0
 defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 0
 defaults write com.apple.AppleMultitouchTrackpad SecondClickThreshold -int 0
 
-
 #Startup at login
 osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/MiddleClick.app", hidden:true}'
+#osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Docker.app", hidden:true}'
 brew services restart skhd
 brew services restart yabai
 
 #custom apps config
 defaults write com.lwouis.alt-tab-macos.plist "hideWindowlessApps" -string true
 defaults write com.lwouis.alt-tab-macos.plist "holdShortcut" -string "⌘"
+defaults write com.lwouis.alt-tab-macos.plist "showOnScreen" 2
 
 ###############################################################################
 # Kill/restart affected applications                                          #

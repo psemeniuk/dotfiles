@@ -17,6 +17,50 @@
 	prune = true
 [pager]
 	branch = false
+[merge]
+        tool = intellij
+[difftool "intellij"]
+        cmd = /Applications/IntelliJ\\ IDEA.app/Contents/MacOS/idea diff $(cd $(dirname \"$LOCAL\") && pwd)/$(basename \"$LOCAL\") $(cd $(dirname \"$REMOTE\") && pwd)/$(basename \"$REMOTE\")
+[mergetool "intellij"]
+        cmd = /Applications/IntelliJ\\ IDEA.app/Contents/MacOS/idea merge $(cd $(dirname \"$LOCAL\") && pwd)/$(basename \"$LOCAL\") $(cd $(dirname \"$REMOTE\") && pwd)/$(basename \"$REMOTE\") $(cd $(dirname \"$BASE\") && pwd)/$(basename \"$BASE\") $(cd $(dirname \"$MERGED\") && pwd)/$(basename \"$MERGED\")
+        trustExitCode = true
+        keepBackup = false
+[mergetool]
+	keepBackup = false
 
-#TODO aliases
+[alias]
+    purge = reset --hard
+    remotes = remote -v
+    last = rev-parse HEAD
+    current = rev-parse --abbrev-ref HEAD
+    branches = branch -vv
+    st = status
 
+    cmt = "!f() { git add -A && git commit -m \"$@\"; }; f"
+    new = "!f() { git fetch origin master && git checkout -b $1 origin/master; }; f"
+    append = ![[ $(git log -1 --format=%an) == $(git config --get user.name) ]] && (git add -A && git commit --amend --no-edit) && ([[ $1 == "pub" ]] && git pub || true) || echo 'You dont want to amend this commit'
+    squash = "!f(){ \
+        STASH_OUTPUT=$(git stash); \
+        git reset --soft HEAD~$1 && git commit -m \"$2\"; \
+        if [[ STASH_OUTPUT != 'No local changes to save' ]]; then git stash pop; fi; \
+    }; f"
+    resolve = !git mergetool && GIT_EDITOR=true git rebase --continue
+    sync = !git pull origin master --rebase || (git resolve) #TODO handle multiple conflicted commits
+    pub = "!f() { \
+        CURRENT=$(git current); \
+        git push origin $CURRENT:$CURRENT; \
+        if [[ $? == '0' ]]; then return; fi; \
+        if [[ $CURRENT == 'master' ]]; then echo 'You dont want to overwrite main branch'; return; fi; \
+        echo 'Trying semi-force push'; \
+        git fetch origin $CURRENT > /dev/null 2>&1; \
+        LOG_LOCAL=\"$(git log --format=%B%an)\"; \
+        LOG_REMOTE=\"$(git log origin/$CURRENT --format=%B%an)\"; \
+        set +o posix; \
+        DIFF=$(diff <(echo \"$LOG_LOCAL\") <(echo \"$LOG_REMOTE\") | grep '^>'); \
+        if [[ $DIFF != '' ]]; then echo 'remote branch contains changes you dont want to overwrite'; return; fi; \
+        git push --force origin $CURRENT:$CURRENT; \
+    }; f"
+    cleanup = !git branch -vv | awk '{print $1}' | grep -v '*' | xargs git branch -D
+    to-previous = reset --hard HEAD~1
+
+#TODO document aliases
