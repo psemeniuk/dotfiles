@@ -63,4 +63,9 @@
     cleanup = !git branch -vv | awk '{print $1}' | grep -v '*' | xargs git branch -D
     to-previous = reset --hard HEAD~1
 
+[credential "https://github.com/psemeniuk"]
+    username = psemeniuk
+[credential]
+    useHttpPath = true
+
 #TODO document aliases

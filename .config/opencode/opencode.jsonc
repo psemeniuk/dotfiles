@@ -1,0 +1,184 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // Keep session sharing off by default.
+  "share": "disabled",
+
+  // Safer than silent updates.
+  "autoupdate": false,
+
+  "mcp": {
+    "context7": {
+      "headers": {
+        "CONTEXT7_API_KEY": "{file:~/.config/opencode/context7-api-key}"
+      },
+      "type": "remote",
+      "enabled": false,
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "datadog": {
+      "type": "remote",
+      "enabled": false,
+      "url": "https://mcp.us5.datadoghq.com/api/unstable/mcp-server/mcp"
+    }
+  },
+
+  "model": "github-copilot/gpt-5.4",
+
+  "permission": {
+    // Default: ask unless explicitly allowed below.
+    "*": "ask",
+
+    // Read-only local inspection.
+    "read": {
+      "*": "allow",
+
+      // Block common secret files.
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow",
+      "*.pem": "deny",
+      "*.key": "deny",
+      "*.p12": "deny",
+      "*.pfx": "deny",
+      "*.cer": "deny",
+      "*.crt": "deny",
+      "*.der": "deny",
+      "*.p8": "deny",
+      "*.kubeconfig": "deny",
+
+      // Block common credential locations.
+      "~/.ssh/*": "deny",
+      "~/.aws/credentials": "deny",
+      "~/.npmrc": "deny",
+      "~/.netrc": "deny",
+      "~/.kube/config": "deny"
+    },
+
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "lsp": "allow",
+    "question": "allow",
+    "todoread": "allow",
+    "todowrite": "allow",
+
+    // Arbitrary outbound fetches should be approved.
+    "webfetch": "ask",
+    "websearch": "ask",
+    "codesearch": "ask",
+
+    // Allow edits in the working directory, but keep secrets blocked.
+    // This covers edit/write/apply_patch.
+    "edit": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.pem": "deny",
+      "*.key": "deny",
+      "*.p12": "deny",
+      "*.pfx": "deny",
+      "~/development/**": "ask"
+    },
+
+    // Shell commands can change local or remote state.
+    "bash": {
+      "*": "ask",
+
+      // Safe local inspection and read-oriented GitHub CLI commands.
+      "pwd*": "allow",
+      "ls*": "allow",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git show*": "allow",
+      "git remote *": "allow",
+      "git rev-parse *": "allow",
+      "git branch --show-current*": "allow",
+      "git ls-remote *": "allow",
+      "gh auth status*": "allow",
+      "gh pr status*": "allow",
+      "gh pr view*": "allow",
+      "gh pr list*": "allow",
+      "gh repo view*": "allow",
+      "gh repo list*": "allow",
+      "gh search *": "allow",
+      "gh repo clone *": "allow",
+      "pre-commit run --all-files*": "allow",
+      "jq *": "allow",
+      "rg *": "allow",
+      "open *.html*": "allow",
+      "open http://localhost*": "allow"
+    },
+
+    // Subagents inherit the same tool permissions as the root agent.
+    "task": "allow",
+    "skill": "ask",
+
+    // Allow reads under ~/development, but keep other external access gated.
+    "external_directory": {
+      "*": "ask",
+      "~/development/**": "allow"
+    },
+
+    // If the same tool loops, stop and ask.
+    "doom_loop": "ask",
+    // Trusted read-only MCP/doc tools seen in your history.
+    "context7_resolve-library-id": "allow",
+    "context7_query-docs": "allow",
+
+    "datadog_search_datadog_logs": "allow",
+    "datadog_analyze_datadog_logs": "allow",
+    "datadog_search_datadog_spans": "allow",
+    "datadog_aggregate_spans": "allow",
+    "datadog_get_datadog_trace": "allow",
+    "datadog_get_datadog_metric": "allow",
+    "datadog_get_datadog_metric_context": "allow",
+    "datadog_search_datadog_metrics": "allow",
+    "datadog_search_datadog_services": "allow",
+    "datadog_search_datadog_monitors": "allow",
+    "datadog_search_datadog_incidents": "allow",
+    "datadog_search_datadog_dashboards": "allow",
+
+    // Remote state-changing Datadog tools should require approval.
+    "datadog_create_datadog_notebook": "ask",
+    "datadog_edit_datadog_notebook": "ask",
+    "datadog_upsert_datadog_dashboard": "ask"
+  },
+
+  "provider": {
+    "rtx": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "RTX",
+      "options": {
+        "baseURL": "http://192.168.158.10:8888/v1"
+      },
+      "models": {
+        "google/gemma-4-26b-a4b": {
+          "name": "Gemma 4-26b-a4b (local)"
+        },
+        "qwen3.6-35b-a3b@q4_k_s": {
+          "name": "Qwen 3.6-35b-a3b (local)"
+        },
+        "qwen3.6-27b": {
+          "name": "Qwen 3.6-27b (local)"
+        }
+      }
+    },
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LM Studio (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1234/v1"
+      },
+      "models": {
+        "mlx-community/qwen3.6-35b-a3b": {
+          "name": "Qwen 3.6-35b-a3b (local)"
+        },
+        "mlx-community/qwen3.6-27b": {
+          "name": "Qwen 3.6-27b (local)"
+        }
+      }
+    }
+  }
+}
