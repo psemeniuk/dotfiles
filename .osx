@@ -27,6 +27,10 @@ defaults write com.apple.dock show-recents -bool "false"
 # Speed up Mission Control animations
 defaults write com.apple.dock expose-animation-duration -float 0.1
 
+# Disable Quick Note on the bottom-right hot corner.
+defaults write com.apple.dock wvous-br-corner -int 0
+defaults write com.apple.dock wvous-br-modifier -int 0
+
 ###############################################################################
 # Misc
 ###############################################################################
