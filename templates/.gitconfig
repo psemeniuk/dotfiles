@@ -64,8 +64,19 @@
     to-previous = reset --hard HEAD~1
 
 [credential "https://github.com/psemeniuk"]
-    username = psemeniuk
+    username = {{ dotfiles_gitconfig_github_private_username }}
 [credential]
     useHttpPath = true
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+    username = {{ dotfiles_gitconfig_github_private_username }}
+{% for prefix in dotfiles_gitconfig_github_company_prefixes | default([]) %}
+[credential "https://github.com/{{ prefix }}"]
+    username = {{ dotfiles_gitconfig_github_company_username }}
+{% endfor %}
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
 
 #TODO document aliases
