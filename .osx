@@ -52,11 +52,21 @@ defaults write NSGlobalDomain "NSNavPanelExpandedStateForSaveMod2" -bool "true"
 defaults write NSGlobalDomain "NSDocumentSaveNewDocumentsToCloud" -bool "false"
 defaults write NSGlobalDomain "AppleShowAllExtensions" -bool "true"
 defaults write NSGlobalDomain com.apple.springing.delay -float 1.0
+defaults write -g com.apple.keyboard.fnState -int 1
+defaults write -g com.apple.mouse.scaling -float 0.5
+defaults write com.apple.screensaver askForPassword -int 1
+defaults write com.apple.screensaver askForPasswordDelay -int 0
+defaults -currentHost write com.apple.screensaver idleTime -int 1200
 #defaults write NSGlobalDomain "KeyRepeat" -int 50
 #defaults write NSGlobalDomain "InitialKeyRepeat" -int 15
 
 defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 0
 defaults write com.apple.AppleMultitouchTrackpad SecondClickThreshold -int 0
+
+if [[ "${RUN_AS_ROOT}" == true ]]; then
+  pmset -b displaysleep 60
+  pmset -c displaysleep 0
+fi
 
 #Startup at login
 osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/MiddleClick.app", hidden:true}'
