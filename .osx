@@ -84,9 +84,10 @@ fi
 #brew services restart yabai
 
 #custom apps config
-defaults write com.lwouis.alt-tab-macos.plist "hideWindowlessApps" -string true
-defaults write com.lwouis.alt-tab-macos.plist "holdShortcut" -string "⌘"
-defaults write com.lwouis.alt-tab-macos.plist "showOnScreen" 2
+#FIXME doesnt work on anymore (at least for shortcut)
+#defaults write com.lwouis.alt-tab-macos.plist "hideWindowlessApps" -string true
+#defaults write com.lwouis.alt-tab-macos.plist "holdShortcut" -string "⌘"
+#defaults write com.lwouis.alt-tab-macos.plist "showOnScreen" 2
 
 ###############################################################################
 # Kill/restart affected applications                                          #
