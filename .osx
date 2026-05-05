@@ -35,7 +35,6 @@ defaults write com.apple.dock wvous-br-modifier -int 0
 # Misc
 ###############################################################################
 chflags nohidden ~/Library
-chflags nohidden ~/opt
 
 mkdir -p ~/Documents/Screenshots
 defaults write com.apple.screencapture "location" -string "~/Documents/Screenshots"
@@ -63,9 +62,10 @@ defaults write NSGlobalDomain "AppleShowAllExtensions" -bool "true"
 defaults write NSGlobalDomain com.apple.springing.delay -float 1.0
 defaults write -g com.apple.keyboard.fnState -int 1
 defaults write -g com.apple.mouse.scaling -float 0.5
+# Lock immediately and start the screen saver after 1 hour of inactivity.
 defaults write com.apple.screensaver askForPassword -int 1
 defaults write com.apple.screensaver askForPasswordDelay -int 0
-defaults -currentHost write com.apple.screensaver idleTime -int 1200
+defaults -currentHost write com.apple.screensaver idleTime -int 3600
 #defaults write NSGlobalDomain "KeyRepeat" -int 50
 #defaults write NSGlobalDomain "InitialKeyRepeat" -int 15
 
@@ -78,10 +78,10 @@ if [[ "${RUN_AS_ROOT}" == true ]]; then
 fi
 
 #Startup at login
-osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/MiddleClick.app", hidden:true}'
+#osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/MiddleClick.app", hidden:true}'
 #osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Docker.app", hidden:true}'
-brew services restart skhd
-brew services restart yabai
+#brew services restart skhd
+#brew services restart yabai
 
 #custom apps config
 defaults write com.lwouis.alt-tab-macos.plist "hideWindowlessApps" -string true
