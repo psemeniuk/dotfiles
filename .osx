@@ -42,6 +42,9 @@ defaults write com.apple.screencapture "disable-shadow" -bool "true"
 
 defaults write com.apple.LaunchServices "LSQuarantine" -bool "false"
 defaults write NSGlobalDomain "ApplePressAndHoldEnabled" -bool "false"
+# Text input preferences.
+defaults write NSGlobalDomain "NSAutomaticSpellingCorrectionEnabled" -bool "false"
+defaults write NSGlobalDomain "NSAutomaticCapitalizationEnabled" -bool "false"
 defaults write com.apple.print.PrintingPrefs "Quit When Finished" -bool "true"
 defaults write com.apple.HIToolbox AppleFnUsageType -int 0
 
@@ -88,6 +91,7 @@ fi
 #defaults write com.lwouis.alt-tab-macos.plist "hideWindowlessApps" -string true
 #defaults write com.lwouis.alt-tab-macos.plist "holdShortcut" -string "⌘"
 #defaults write com.lwouis.alt-tab-macos.plist "showOnScreen" 2
+#TODO hide apps with no open window
 
 ###############################################################################
 # Kill/restart affected applications                                          #
