@@ -20,6 +20,11 @@
       "type": "remote",
       "enabled": false,
       "url": "https://mcp.us5.datadoghq.com/api/unstable/mcp-server/mcp"
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "enabled": false,
+      "command": ["npx", "-y", "chrome-devtools-mcp@latest", "--no-usage-statistics"]
     }
   },
 
