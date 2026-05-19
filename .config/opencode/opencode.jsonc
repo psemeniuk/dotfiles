@@ -7,6 +7,10 @@
   // Safer than silent updates.
   "autoupdate": false,
 
+  "compaction": {
+    "auto": false,
+  },
+
   "mcp": {
     "context7": {
       "headers": {
