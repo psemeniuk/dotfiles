@@ -24,7 +24,7 @@
     "chrome-devtools": {
       "type": "local",
       "enabled": false,
-      "command": ["npx", "-y", "chrome-devtools-mcp@latest", "--no-usage-statistics"]
+      "command": ["npx", "-y", "chrome-devtools-mcp@latest", "--autoConnect", "--no-usage-statistics"]
     }
   },
 
