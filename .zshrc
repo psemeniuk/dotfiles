@@ -16,6 +16,8 @@ export WORDCHARS=
 
 export PATH=$PATH:~/.bin
 
+export JAVA_VERSION=21
+
 ##### ALIASES #####
 
 export ALIAS_DEBUG=true #can stay for now until aliases becomes stable
@@ -79,3 +81,11 @@ function replace-fn {
     echo "replaced $occurrences occurrences"
 }
 alias replace=replace-fn
+
+# Added by LM Studio CLI (lms)
+export PATH="$PATH:/Users/patryk.semeniuk/.lmstudio/bin"
+# End of LM Studio CLI section
+
+
+# User-local CLI tools
+export PATH="$HOME/.local/bin:$PATH"

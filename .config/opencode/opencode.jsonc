@@ -1,16 +1,40 @@
 {
   "$schema": "https://opencode.ai/config.json",
-
   // Keep session sharing off by default.
   "share": "disabled",
-
+  "experimental": {
+    "disable_paste_summary": true
+  },
+  "agent": {
+    "build": {
+      "mode": "primary"
+    },
+    "general": {
+      "disable": false,
+      "model": "openai/gpt-6.1-sol-fast",
+      "variant": "medium"
+    },
+    "scout": {
+      "disable": false,
+      "mode": "subagent",
+      "model": "openai/gpt-6.1-sol-fast",
+      "variant": "medium"
+    },
+    "explore": {
+      "disable": false,
+      "model": "openai/gpt-6.1-sol-fast",
+      "variant": "medium"
+    },
+    "plan": {
+      "disable": true
+    }
+  },
+  "subagent_depth": 1,
   // Safer than silent updates.
   "autoupdate": false,
-
   "compaction": {
-    "auto": false,
+    "auto": true,
   },
-
   "mcp": {
     "context7": {
       "headers": {
@@ -23,25 +47,27 @@
     "datadog": {
       "type": "remote",
       "enabled": false,
-      "url": "https://mcp.us5.datadoghq.com/api/unstable/mcp-server/mcp"
+      "url": "https://mcp.us5.datadoghq.com/v1/mcp"
     },
     "chrome-devtools": {
       "type": "local",
       "enabled": false,
-      "command": ["npx", "-y", "chrome-devtools-mcp@latest", "--autoConnect", "--no-usage-statistics"]
+      "command": [
+        "npx",
+        "-y",
+        "chrome-devtools-mcp@latest",
+        //        "--autoConnect",
+        "--no-usage-statistics",
+        "--isolated=true"
+      ]
     }
   },
-
-  "model": "github-copilot/gpt-5.4",
-
   "permission": {
     // Default: ask unless explicitly allowed below.
     "*": "ask",
-
     // Read-only local inspection.
     "read": {
       "*": "allow",
-
       // Block common secret files.
       "*.env": "deny",
       "*.env.*": "deny",
@@ -55,7 +81,6 @@
       "*.der": "deny",
       "*.p8": "deny",
       "*.kubeconfig": "deny",
-
       // Block common credential locations.
       "~/.ssh/*": "deny",
       "~/.aws/credentials": "deny",
@@ -63,7 +88,6 @@
       "~/.netrc": "deny",
       "~/.kube/config": "deny"
     },
-
     "glob": "allow",
     "grep": "allow",
     "list": "allow",
@@ -71,12 +95,10 @@
     "question": "allow",
     "todoread": "allow",
     "todowrite": "allow",
-
     // Arbitrary outbound fetches should be approved.
-    "webfetch": "ask",
-    "websearch": "ask",
-    "codesearch": "ask",
-
+    "webfetch": "allow",
+    "websearch": "allow",
+    "codesearch": "allow",
     // Allow edits in the working directory, but keep secrets blocked.
     // This covers edit/write/apply_patch.
     "edit": {
@@ -89,11 +111,9 @@
       "*.pfx": "deny",
       "~/development/**": "ask"
     },
-
     // Shell commands can change local or remote state.
     "bash": {
       "*": "ask",
-
       // Safe local inspection and read-oriented GitHub CLI commands.
       "pwd*": "allow",
       "ls*": "allow",
@@ -119,23 +139,19 @@
       "open *.html*": "allow",
       "open http://localhost*": "allow"
     },
-
-    // Subagents inherit the same tool permissions as the root agent.
+    // Allow delegation; subagent_depth limits nesting to one level.
     "task": "allow",
-    "skill": "ask",
-
+    "skill": "allow",
     // Allow reads under ~/development, but keep other external access gated.
     "external_directory": {
       "*": "ask",
       "~/development/**": "allow"
     },
-
     // If the same tool loops, stop and ask.
     "doom_loop": "ask",
     // Trusted read-only MCP/doc tools seen in your history.
     "context7_resolve-library-id": "allow",
     "context7_query-docs": "allow",
-
     "datadog_search_datadog_logs": "allow",
     "datadog_analyze_datadog_logs": "allow",
     "datadog_search_datadog_spans": "allow",
@@ -148,13 +164,15 @@
     "datadog_search_datadog_monitors": "allow",
     "datadog_search_datadog_incidents": "allow",
     "datadog_search_datadog_dashboards": "allow",
-
+    "datadog_search_datadog_sdk": "allow",
+    "datadog_list_datadog_skills": "allow",
+    "datadog_load_datadog_skill": "allow",
+    "datadog_execute_code": "allow",
     // Remote state-changing Datadog tools should require approval.
     "datadog_create_datadog_notebook": "ask",
     "datadog_edit_datadog_notebook": "ask",
-    "datadog_upsert_datadog_dashboard": "ask"
+    "datadog_upsert_datadog_dashboard": "ask",
   },
-
   "provider": {
     "rtx": {
       "npm": "@ai-sdk/openai-compatible",
@@ -187,6 +205,19 @@
         "mlx-community/qwen3.6-27b": {
           "name": "Qwen 3.6-27b (local)"
         }
+      }
+    },
+    "github-copilot": {
+      "options": {
+        "timeout": 300000,
+        "headerTimeout": 60000,
+        "chunkTimeout": 30000
+      }
+    },
+    "amazon-bedrock": {
+      "options": {
+        "region": "us-east-1",
+        "profile": "hc-shared-services"
       }
     }
   }
