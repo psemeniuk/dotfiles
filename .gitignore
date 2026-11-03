@@ -4,6 +4,7 @@
 # Pi agent is linked here. Ignore everything by default; explicitly opt in
 # non-secret configuration and source. New plugin state needs review.
 /.pi/agent/*
+!/.pi/agent/AGENTS.md
 !/.pi/agent/settings.json
 !/.pi/agent/mcp.json
 !/.pi/agent/extensions/
