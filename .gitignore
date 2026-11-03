@@ -1,2 +1,39 @@
 .idea
 /.gitconfig
+
+# Pi agent is linked here. Ignore everything by default; explicitly opt in
+# non-secret configuration and source. New plugin state needs review.
+/.pi/agent/*
+!/.pi/agent/settings.json
+!/.pi/agent/mcp.json
+!/.pi/agent/extensions/
+!/.pi/agent/extensions/**
+!/.pi/agent/packages/
+!/.pi/agent/packages/**
+!/.pi/agent/per-model-fast/
+!/.pi/agent/per-model-fast/**
+!/.pi/agent/per-model-thinking/
+!/.pi/agent/per-model-thinking/**
+!/.pi/agent/tests/
+!/.pi/agent/tests/**
+
+# Even inside allowed directories, never stage common runtime/secret material.
+**/node_modules/
+**/__pycache__/
+/.pi/agent/**/.test-dist/
+/.pi/agent/**/.env
+/.pi/agent/**/.env.*
+/.pi/agent/**/.npmrc
+/.pi/agent/**/auth.json
+/.pi/agent/**/mcp-auth.json
+/.pi/agent/**/credentials.json
+/.pi/agent/**/trust.json
+/.pi/agent/**/sessions/
+/.pi/agent/**/cache/
+/.pi/agent/**/generated-images/
+/.pi/agent/**/lan-voice/
+/.pi/agent/**/*.pem
+/.pi/agent/**/*.key
+/.pi/agent/**/*.p12
+/.pi/agent/**/*.pfx
+/.pi/agent/**/*.log

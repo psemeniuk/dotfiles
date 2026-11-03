@@ -1,0 +1,43 @@
+{
+  "lastChangelogVersion": "1.4.0",
+  "deviceId": "0a2479ad-87fe-41d7-b4ca-5a553a7fe816",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-6.1-terra",
+  "packages": [
+    "./packages/pi-fast-local",
+    "./packages/pi-codex-image-gen-local"
+  ],
+  "hideThinkingBlock": true,
+  "enabledModels": [
+    "openai-codex/gpt-6-astra",
+    "openai-codex/gpt-6.1-sol",
+    "openai-codex/gpt-6.1-terra"
+  ],
+  "steeringMode": "all",
+  "followUpMode": "all",
+  "transport": "auto",
+  "sessionShareDestination": "auto",
+  "httpIdleTimeoutMs": 300000,
+  "cacheWarming": "streaming",
+  "markdown": {
+    "mermaid": "streaming"
+  },
+  "showCacheMissNotices": true,
+  "collapseChangelog": false,
+  "quietStartup": true,
+  "enableInstallTelemetry": false,
+  "defaultProjectTrust": "always",
+  "doubleEscapeAction": "tree",
+  "treeFilterMode": "default",
+  "warnings": {
+    "anthropicExtraUsage": true
+  },
+  "tuiMode": "fullscreen",
+  "fullscreenExitOutput": "resume-hint",
+  "fullscreenScrollbar": "auto",
+  "fullscreenCopyOnSelect": true,
+  "fullscreenWheelScrollLines": "auto",
+  "compaction": {
+    "enabled": false
+  }
+}

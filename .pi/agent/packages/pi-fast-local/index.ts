@@ -1,0 +1,610 @@
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { rgbColor } from "@earendil-works/pi-tui";
+import {
+  CONFIG_DIR_NAME,
+  getAgentDir,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+
+const EXTENSION_ID = "fast";
+const ANTHROPIC_PROVIDER_ID = "anthropic";
+const ANTHROPIC_API_ID = "anthropic-messages";
+const ANTHROPIC_FAST_SPEED = "fast";
+const ANTHROPIC_FAST_BETA = "fast-mode-2026-02-01";
+const ANTHROPIC_SUPPORTED_MODELS = new Set(["claude-opus-4-8", "claude-opus-5", "claude-opus-5-5"]);
+
+const OPENAI_PROVIDER_ID = "openai-codex";
+const OPENAI_API_ID = "openai-codex-responses";
+const OPENAI_FAST_SERVICE_TIER = "priority";
+const OPENAI_SUPPORTED_MODELS = new Set([
+  "gpt-5.5",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-6-astra",
+  "gpt-6.1-sol",
+  "gpt-6.1-terra",
+  "gpt-6-sol",
+  "gpt-6-luna",
+]);
+const OPENAI_API_PROVIDER_ID = "openai";
+const OPENAI_API_IDS = new Set(["openai-responses", "openai-completions"]);
+const OPENAI_API_FAST_SERVICE_TIER = "fast";
+const OPENAI_API_SUPPORTED_MODELS = new Set([
+  "gpt-6.1-sol",
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
+]);
+const OPENAI_ULTRAFAST_MODEL = "gpt-6-astra";
+const OPENAI_ULTRAFAST_API_ID = "openai-responses";
+const OPENAI_ULTRAFAST_SERVICE_TIER = "ultrafast";
+const OPENAI_CANONICAL_BASE_URL = "https://api.openai.com/v1";
+
+const DEFAULT_CONFIG: FastConfig = {
+  enabled: false,
+  showStatus: true,
+};
+
+type FastProvider = "anthropic" | "openai";
+type ModelId = { provider: string; id: string };
+
+type FastConfig = {
+  /** Default Fast-mode state when there is no saved model preference. */
+  enabled: boolean;
+  /** Show a compact `fast` status when Fast mode is active for the current model. */
+  showStatus: boolean;
+};
+
+type SessionState = {
+  config: FastConfig;
+  /** Session-only Ultrafast selection; never loaded from configuration. */
+  ultrafast: boolean;
+  lastInjectedAt?: number;
+  lastInjectedModel?: string;
+};
+
+type ProjectConfigContext = {
+  cwd: string;
+  isProjectTrusted?: () => boolean;
+};
+
+type RecursivePartial<T> = {
+  [P in keyof T]?: T[P] extends object ? RecursivePartial<T[P]> : T[P];
+};
+
+type PayloadRecord = Record<string, unknown>;
+
+type Eligibility = {
+  eligible: boolean;
+  modelKey: string;
+  provider?: FastProvider;
+  serviceTier?: string;
+  reason?: string;
+};
+
+function readConfigFile(path: string): RecursivePartial<FastConfig> {
+  if (!existsSync(path)) return {};
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf-8"));
+    return isPayloadRecord(parsed) ? (parsed as RecursivePartial<FastConfig>) : {};
+  } catch (error) {
+    console.error(`Warning: Could not parse ${path}: ${error}`);
+    return {};
+  }
+}
+
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function mergeConfig(base: FastConfig, overrides: RecursivePartial<FastConfig>): FastConfig {
+  return {
+    enabled: normalizeBoolean(overrides.enabled, base.enabled),
+    showStatus: normalizeBoolean(overrides.showStatus, base.showStatus),
+  };
+}
+
+function canReadProjectConfig(ctx: ProjectConfigContext): boolean {
+  return typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted();
+}
+
+function findProjectConfigPath(cwd: string): string {
+  let current = cwd;
+  while (true) {
+    const candidate = join(current, CONFIG_DIR_NAME, "fast.json");
+    if (existsSync(candidate)) return candidate;
+
+    const parent = dirname(current);
+    if (parent === current) return join(cwd, CONFIG_DIR_NAME, "fast.json");
+    current = parent;
+  }
+}
+
+function loadConfig(ctx: ProjectConfigContext): FastConfig {
+  const globalConfig = readConfigFile(join(getAgentDir(), "extensions", "fast.json"));
+  const projectConfig = canReadProjectConfig(ctx)
+    ? readConfigFile(findProjectConfigPath(ctx.cwd))
+    : {};
+  return mergeConfig(mergeConfig(DEFAULT_CONFIG, globalConfig), projectConfig);
+}
+
+function isPayloadRecord(payload: unknown): payload is PayloadRecord {
+  return typeof payload === "object" && payload !== null && !Array.isArray(payload);
+}
+
+// A file per provider/model avoids overwriting preferences changed by another Pi process.
+const preferencesDir = join(getAgentDir(), "per-model-fast");
+function preferenceFile(model: ModelId): string {
+  const key = JSON.stringify([model.provider, model.id]);
+  return join(preferencesDir, `${createHash("sha256").update(key).digest("hex")}.json`);
+}
+
+function readPreference(model: ModelId): boolean | undefined {
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(preferenceFile(model), "utf8"));
+  } catch (error: any) {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  }
+  if (!isPayloadRecord(data) || data.provider !== model.provider || data.model !== model.id || typeof data.enabled !== "boolean") {
+    throw new Error(`Invalid Fast mode preference in ${preferenceFile(model)}`);
+  }
+  return data.enabled;
+}
+
+function savePreference(model: ModelId, enabled: boolean): void {
+  mkdirSync(preferencesDir, { recursive: true, mode: 0o700 });
+  const file = preferenceFile(model);
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify({ provider: model.provider, model: model.id, enabled }, null, 2)}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    renameSync(temporary, file);
+  } finally {
+    try { unlinkSync(temporary); } catch (error: any) { if (error.code !== "ENOENT") throw error; }
+  }
+}
+
+function isFastEnabled(ctx: ExtensionContext, state: SessionState): boolean {
+  return ctx.model ? (readPreference(ctx.model) ?? state.config.enabled) : false;
+}
+
+function describeMode(ctx: ExtensionContext, state: SessionState): string {
+  const preference = ctx.model ? readPreference(ctx.model) : undefined;
+  const enabled = preference ?? state.config.enabled;
+  return `${enabled ? "on" : "off"} (${preference === undefined ? "config default" : "saved for this model"})`;
+}
+
+function getEligibility(ctx: ExtensionContext, includeServiceTier = true): Eligibility {
+  const model = ctx.model;
+  if (!model) {
+    return { eligible: false, modelKey: "no-model", reason: "no model is selected" };
+  }
+
+  const key = `${model.provider}/${model.id}`;
+  if (model.provider === ANTHROPIC_PROVIDER_ID) {
+    if (model.api !== ANTHROPIC_API_ID) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason: `current API is ${model.api}, not ${ANTHROPIC_API_ID}`,
+      };
+    }
+
+    if (!ANTHROPIC_SUPPORTED_MODELS.has(model.id)) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason: "Fast mode is only enabled for Claude Opus 4.8, Claude Opus 5, and Claude Opus 5.5",
+      };
+    }
+
+    return { eligible: true, modelKey: key, provider: "anthropic" };
+  }
+
+  if (model.provider === OPENAI_PROVIDER_ID) {
+    if (model.api !== OPENAI_API_ID) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason: `current API is ${model.api}, not ${OPENAI_API_ID}`,
+      };
+    }
+
+    if (!OPENAI_SUPPORTED_MODELS.has(model.id)) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason: "Fast mode is not enabled for this OpenAI Codex model",
+      };
+    }
+
+    if (!ctx.modelRegistry.isUsingOAuth(model)) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason: "ChatGPT OAuth auth is required; API-key auth is intentionally not used",
+      };
+    }
+
+    return {
+      eligible: true,
+      modelKey: key,
+      provider: "openai",
+      serviceTier: OPENAI_FAST_SERVICE_TIER,
+    };
+  }
+
+  if (model.provider === OPENAI_API_PROVIDER_ID) {
+    if (!OPENAI_API_IDS.has(model.api)) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason: `current API is ${model.api}, not openai-responses or openai-completions`,
+      };
+    }
+
+    if (!OPENAI_API_SUPPORTED_MODELS.has(model.id)) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason:
+          "Fast mode is only enabled for GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, and GPT-6 Luna on direct OpenAI APIs",
+      };
+    }
+
+    return {
+      eligible: true,
+      modelKey: key,
+      provider: "openai",
+      serviceTier: includeServiceTier
+        ? ctx.modelRegistry.isUsingOAuth(model)
+          ? OPENAI_FAST_SERVICE_TIER
+          : OPENAI_API_FAST_SERVICE_TIER
+        : undefined,
+    };
+  }
+
+  return {
+    eligible: false,
+    modelKey: key,
+    reason: `current provider ${model.provider} does not support this extension's Fast mode`,
+  };
+}
+
+function isCanonicalOpenAIEndpoint(baseUrl: unknown): boolean {
+  return baseUrl === OPENAI_CANONICAL_BASE_URL || baseUrl === `${OPENAI_CANONICAL_BASE_URL}/`;
+}
+
+function getUltrafastEligibility(ctx: ExtensionContext): Eligibility {
+  const model = ctx.model;
+  if (!model) {
+    return { eligible: false, modelKey: "no-model", reason: "no model is selected" };
+  }
+
+  const key = `${model.provider}/${model.id}`;
+  if (model.provider !== OPENAI_API_PROVIDER_ID) {
+    return {
+      eligible: false,
+      modelKey: key,
+      reason: "Ultrafast mode requires the direct OpenAI provider",
+    };
+  }
+
+  if (model.api !== OPENAI_ULTRAFAST_API_ID) {
+    return {
+      eligible: false,
+      modelKey: key,
+      reason: `Ultrafast mode requires API ${OPENAI_ULTRAFAST_API_ID}`,
+    };
+  }
+
+  if (model.id !== OPENAI_ULTRAFAST_MODEL) {
+    return {
+      eligible: false,
+      modelKey: key,
+      reason: `Ultrafast mode is only enabled for ${OPENAI_ULTRAFAST_MODEL}`,
+    };
+  }
+
+  if (!isCanonicalOpenAIEndpoint(model.baseUrl)) {
+    return {
+      eligible: false,
+      modelKey: key,
+      reason: `Ultrafast mode requires the canonical endpoint ${OPENAI_CANONICAL_BASE_URL}`,
+    };
+  }
+
+  try {
+    if (ctx.modelRegistry.isUsingOAuth(model)) {
+      return {
+        eligible: false,
+        modelKey: key,
+        reason: "Ultrafast mode requires direct OpenAI API-key auth; OAuth is unsupported",
+      };
+    }
+  } catch {
+    return {
+      eligible: false,
+      modelKey: key,
+      reason: "Ultrafast mode requires direct OpenAI API-key auth; auth could not be verified",
+    };
+  }
+
+  return {
+    eligible: true,
+    modelKey: key,
+    provider: "openai",
+    serviceTier: OPENAI_ULTRAFAST_SERVICE_TIER,
+  };
+}
+
+function updateStatus(ctx: ExtensionContext, state: SessionState): void {
+  if (!ctx.hasUI) return;
+  if (!state.config.showStatus) {
+    ctx.ui.setStatus(EXTENSION_ID, undefined);
+    return;
+  }
+
+  if (state.ultrafast) {
+    const eligibility = getUltrafastEligibility(ctx);
+    ctx.ui.setStatus(EXTENSION_ID, eligibility.eligible ? "ultrafast" : undefined);
+    return;
+  }
+
+  const eligibility = getEligibility(ctx, false);
+  const active = isFastEnabled(ctx, state) && eligibility.eligible;
+  const label = active && ctx.model?.id === "gpt-6-astra"
+    ? ctx.ui.theme.style("fast", { fg: rgbColor(255, 255, 255), bg: rgbColor(204, 0, 0), bold: true })
+    : "fast";
+  ctx.ui.setStatus(EXTENSION_ID, active ? label : undefined);
+}
+
+function getStatusMessage(ctx: ExtensionContext, state: SessionState): string {
+  const injected = state.lastInjectedAt
+    ? ` Last injected for ${state.lastInjectedModel ?? "unknown model"} ${Math.max(0, Math.round((Date.now() - state.lastInjectedAt) / 1000))}s ago.`
+    : "";
+
+  if (state.ultrafast) {
+    const eligibility = getUltrafastEligibility(ctx);
+    if (eligibility.eligible) {
+      return `Ultrafast mode is on (session only) and eligible for ${eligibility.modelKey}; requested service_tier=${OPENAI_ULTRAFAST_SERVICE_TIER}. Actual API pricing is 6x Standard, but Pi's current cost display omits this premium.${injected}`;
+    }
+    return `Ultrafast mode is on (session only), but not eligible for ${eligibility.modelKey}: ${eligibility.reason}.${injected}`;
+  }
+
+  const enabled = isFastEnabled(ctx, state);
+  const eligibility = getEligibility(ctx, enabled);
+  const active = enabled && eligibility.eligible;
+
+  if (active) {
+    const wireSetting =
+      eligibility.provider === "anthropic"
+        ? `speed=${ANTHROPIC_FAST_SPEED}`
+        : `service_tier=${eligibility.serviceTier}`;
+    return `Fast mode is ${describeMode(ctx, state)} and active for ${eligibility.modelKey}; requests will use ${wireSetting} when no tier or speed is already set.${injected}`;
+  }
+
+  if (enabled) {
+    return `Fast mode is ${describeMode(ctx, state)}, but inactive for ${eligibility.modelKey}: ${eligibility.reason}.${injected}`;
+  }
+
+  return `Fast mode is ${describeMode(ctx, state)}. Current model: ${eligibility.modelKey}.${injected}`;
+}
+
+/**
+ * Adds the Fast beta to the request's `betas` list instead of rewriting the
+ * `anthropic-beta` header. Pi derives the final beta list from the model and
+ * request (mid-conversation effort, server-side fallback, inline tools, OAuth,
+ * interleaved thinking, ...) and treats an explicit `anthropic-beta` header as
+ * the complete list, so setting that header here would drop any beta this
+ * extension does not know about.
+ */
+function withAnthropicFastBeta(betas: unknown[] | undefined): unknown[] {
+  const existing = betas ?? [];
+  return existing.includes(ANTHROPIC_FAST_BETA) ? existing : [...existing, ANTHROPIC_FAST_BETA];
+}
+
+function injectUltrafastPayload(
+  payload: unknown,
+  ctx: ExtensionContext,
+  state: SessionState,
+): PayloadRecord | undefined {
+  if (!state.ultrafast) return undefined;
+  const eligibility = getUltrafastEligibility(ctx);
+  if (!eligibility.eligible || !eligibility.serviceTier) return undefined;
+  if (!isPayloadRecord(payload)) return undefined;
+  if (payload.model !== ctx.model?.id) return undefined;
+  if ("service_tier" in payload) return undefined;
+
+  state.lastInjectedAt = Date.now();
+  state.lastInjectedModel = eligibility.modelKey;
+  return { ...payload, service_tier: eligibility.serviceTier };
+}
+
+function injectFastPayload(
+  payload: unknown,
+  ctx: ExtensionContext,
+  state: SessionState,
+): PayloadRecord | undefined {
+  if (state.ultrafast || !isFastEnabled(ctx, state)) return undefined;
+  const eligibility = getEligibility(ctx);
+  if (!eligibility.eligible || !eligibility.provider) return undefined;
+  if (!isPayloadRecord(payload)) return undefined;
+  if (payload.model !== ctx.model?.id) return undefined;
+
+  if (eligibility.provider === "anthropic") {
+    if ("speed" in payload) return undefined;
+    if (payload.betas !== undefined && !Array.isArray(payload.betas)) return undefined;
+    state.lastInjectedAt = Date.now();
+    state.lastInjectedModel = eligibility.modelKey;
+    return { ...payload, speed: ANTHROPIC_FAST_SPEED, betas: withAnthropicFastBeta(payload.betas) };
+  }
+
+  if ("service_tier" in payload) return undefined;
+  if (!eligibility.serviceTier) return undefined;
+  state.lastInjectedAt = Date.now();
+  state.lastInjectedModel = eligibility.modelKey;
+  return { ...payload, service_tier: eligibility.serviceTier };
+}
+
+function disableUltrafast(ctx: ExtensionContext, state: SessionState, reason?: string): void {
+  state.ultrafast = false;
+  updateStatus(ctx, state);
+  if (reason) {
+    ctx.ui.notify(
+      `Ultrafast mode disabled: ${reason}. It remains off until manually enabled.`,
+      "warning",
+    );
+  }
+}
+
+function toggleUltrafast(ctx: ExtensionContext, state: SessionState): void {
+  if (state.ultrafast) {
+    disableUltrafast(ctx, state);
+    ctx.ui.notify(
+      "Ultrafast mode is off (session only); regular Fast remains off until /fast is toggled.",
+      "info",
+    );
+    return;
+  }
+
+  const eligibility = getUltrafastEligibility(ctx);
+  if (!eligibility.eligible) {
+    ctx.ui.notify(
+      `Cannot enable Ultrafast mode for ${eligibility.modelKey}: ${eligibility.reason}.`,
+      "error",
+    );
+    return;
+  }
+
+  // Prevent a paid Fast fallback for this model when Ultrafast is later disabled.
+  // Other models keep their own preferences when the user switches away.
+  savePreference(ctx.model!, false);
+  state.ultrafast = true;
+  updateStatus(ctx, state);
+  ctx.ui.notify(getStatusMessage(ctx, state), "info");
+}
+
+export default function fastExtension(pi: ExtensionAPI) {
+  const states = new WeakMap<object, SessionState>();
+
+  function getState(ctx: ExtensionContext): SessionState {
+    let state = states.get(ctx.sessionManager);
+    if (!state) {
+      state = {
+        config: loadConfig(ctx),
+        ultrafast: false,
+      };
+      states.set(ctx.sessionManager, state);
+    }
+    return state;
+  }
+
+  pi.on("session_start", (_event, ctx) => {
+    const state: SessionState = {
+      config: loadConfig(ctx),
+      ultrafast: false,
+    };
+    states.set(ctx.sessionManager, state);
+    updateStatus(ctx, state);
+  });
+
+  pi.on("model_select", (_event, ctx) => {
+    const state = getState(ctx);
+    if (state.ultrafast) {
+      const eligibility = getUltrafastEligibility(ctx);
+      if (!eligibility.eligible) {
+        disableUltrafast(
+          ctx,
+          state,
+          `the selected model ${eligibility.modelKey} is unsupported (${eligibility.reason})`,
+        );
+        return;
+      }
+    }
+    updateStatus(ctx, state);
+  });
+
+  pi.on("before_provider_request", (event, ctx) => {
+    const state = getState(ctx);
+    if (state.ultrafast) {
+      const eligibility = getUltrafastEligibility(ctx);
+      if (!eligibility.eligible) {
+        disableUltrafast(
+          ctx,
+          state,
+          `the current model ${eligibility.modelKey} is unsupported (${eligibility.reason})`,
+        );
+        return undefined;
+      }
+      const nextPayload = injectUltrafastPayload(event.payload, ctx, state);
+      updateStatus(ctx, state);
+      return nextPayload;
+    }
+
+    const nextPayload = injectFastPayload(event.payload, ctx, state);
+    updateStatus(ctx, state);
+    return nextPayload;
+  });
+
+  pi.registerCommand("ultrafast", {
+    description: "Toggle session-only Ultrafast mode for direct OpenAI API-key GPT-6 Astra",
+    getArgumentCompletions: () => null,
+    handler: async (args, ctx) => {
+      if (args.trim()) {
+        ctx.ui.notify("Usage: /ultrafast", "warning");
+        return;
+      }
+      toggleUltrafast(ctx, getState(ctx));
+    },
+  });
+
+  pi.registerCommand("fast", {
+    description:
+      "Toggle and remember Fast mode for the current supported model",
+    getArgumentCompletions: () => null,
+    handler: async (args, ctx) => {
+      const state = getState(ctx);
+      const action = args.trim();
+
+      if (action === "ultrafast") {
+        toggleUltrafast(ctx, state);
+        return;
+      }
+
+      if (!action) {
+        if (state.ultrafast) {
+          toggleUltrafast(ctx, state);
+          return;
+        }
+        if (!ctx.model) {
+          ctx.ui.notify("Cannot toggle Fast mode: no model is selected.", "warning");
+          return;
+        }
+        const enabled = !isFastEnabled(ctx, state);
+        if (enabled) {
+          const eligibility = getEligibility(ctx);
+          if (!eligibility.eligible) {
+            ctx.ui.notify(`Cannot enable Fast mode for ${eligibility.modelKey}: ${eligibility.reason}.`, "warning");
+            return;
+          }
+        }
+        savePreference(ctx.model, enabled);
+        updateStatus(ctx, state);
+        ctx.ui.notify(getStatusMessage(ctx, state), "info");
+        return;
+      }
+
+      ctx.ui.notify("Usage: /fast [ultrafast]", "warning");
+    },
+  });
+}
