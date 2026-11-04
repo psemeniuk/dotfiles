@@ -18,6 +18,9 @@ export PATH=$PATH:~/.bin
 
 export JAVA_VERSION=21
 
+# Update the Homebrew-managed Pi installation with pi update.
+export PI_SELF_UPDATE_COMMAND="brew upgrade pi-coding-agent"
+
 ##### ALIASES #####
 
 export ALIAS_DEBUG=true #can stay for now until aliases becomes stable
