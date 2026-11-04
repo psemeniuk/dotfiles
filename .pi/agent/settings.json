@@ -1,11 +1,13 @@
 {
-  "lastChangelogVersion": "1.4.0",
+  "lastChangelogVersion": "1.5.0",
   "deviceId": "0a2479ad-87fe-41d7-b4ca-5a553a7fe816",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-6.1-terra",
   "packages": [
     "./packages/pi-fast-local",
-    "./packages/pi-codex-image-gen-local"
+    "./packages/pi-codex-image-gen-local",
+    "npm:pi-web-access",
+    "npm:@juicesharp/rpiv-todo"
   ],
   "hideThinkingBlock": true,
   "enabledModels": [
@@ -39,5 +41,9 @@
   "fullscreenWheelScrollLines": "auto",
   "compaction": {
     "enabled": false
+  },
+  "extensionChangelogVersions": {
+    "{\"source\":\"./packages/pi-codex-image-gen-local\",\"scope\":\"user\"}": "0.3.0-local.1",
+    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.46.0"
   }
 }
