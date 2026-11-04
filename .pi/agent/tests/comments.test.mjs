@@ -1,4 +1,5 @@
 import test from "node:test";
+import { stripVTControlCharacters as stripAnsi } from "node:util";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
@@ -9,10 +10,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../extensions/com
 const host = process.env.PI_PACKAGE ?? join(dirname(dirname(realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim()))), "libexec/lib/node_modules/@earendil-works/pi-coding-agent");
 const fromHost = p => import(pathToFileURL(join(host, p)).href);
 const { createJiti } = await fromHost("node_modules/jiti/lib/jiti.mjs");
-const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-tui": join(host, "node_modules/@earendil-works/pi-tui/dist/index.js") } });
+const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-coding-agent": join(host, "dist/index.js"), "@earendil-works/pi-tui": join(host, "node_modules/@earendil-works/pi-tui/dist/index.js") } });
 const model = await jiti.import(join(root, "model.ts"));
-const { CommentsView, CommentEditor, AnswerView, layout } = await jiti.import(join(root, "view.ts"));
-const { visibleWidth } = await fromHost("node_modules/@earendil-works/pi-tui/dist/index.js");
+const { CommentsView, CommentEditor, AnswerView, layout, markdownLayout } = await jiti.import(join(root, "view.ts"));
+const { visibleWidth, Markdown } = await fromHost("node_modules/@earendil-works/pi-tui/dist/index.js");
 const themeModule = await fromHost("dist/modes/interactive/theme/theme.js");
 themeModule.initTheme("dark", false);
 const theme = themeModule.theme;
@@ -108,17 +109,58 @@ test("layout preserves Unicode offsets, empty lines, tabs and safe control rende
   }
 });
 
+test("Markdown uses the chat renderer and retains source ranges after formatting and wrapping", () => {
+  const text = "## Nagłówek\n\n**bold** and *italic* with `code`.\n\n- zażółć 👩‍💻 中文\n- [link](https://example.com)\n\n```js\nconst x = 1;\n```\n\n> quote\n\n| A | B |\n| - | - |\n| one | two |";
+  for (const width of [12, 35, 80]) {
+    const expected = new Markdown(text, 0, 0, themeModule.getMarkdownTheme()).render(width);
+    const rows = markdownLayout(text, width);
+    assert.deepEqual(rows.map(r => stripAnsi(r.cells.map(c => c.text).join(""))), expected.map(stripAnsi));
+    for (const row of rows) for (const cell of row.cells) {
+      if (cell.start >= 0) assert.equal(stripAnsi(cell.text), text.slice(cell.start, cell.end));
+    }
+    const output = rows.map(r => r.cells.map(c => c.text).join("")).join("\n");
+    assert.equal(output.includes("\x1b[1m"), expected.join("\n").includes("\x1b[1m"));
+    assert.match(output, /\x1b\[38;/);
+    assert.doesNotMatch(stripAnsi(output), /\*\*bold\*\*/);
+  }
+  const repeated = "**same** same **same**";
+  const cells = markdownLayout(repeated, 80).flatMap(r => r.cells);
+  assert.deepEqual(cells.filter(c => stripAnsi(c.text) === "s").map(c => c.start), [2, 9, 16]);
+});
+
+test("border stays within terminal width and Markdown drag selects the original passage", async () => {
+  const source = { id: "a", text: "## Title\n\n**bold** then plain" };
+  const opened = [];
+  const view = new CommentsView(fakeTui(), theme, [source], () => [], async (...args) => opened.push(args), () => {}, e => { throw e; });
+  for (const width of [1, 2, 12, 80]) {
+    const lines = view.render(width);
+    assert.ok(lines.every(line => visibleWidth(line) <= width));
+    if (width >= 2) {
+      assert.match(stripAnsi(lines[0]), /^╭.*╮$/);
+      assert.match(stripAnsi(lines.at(-1)), /^╰.*╯$/);
+    }
+  }
+  const row = view.rows.findIndex(r => r.cells.some(c => c.start === source.text.indexOf("bold")));
+  view.handleMouse(mouse("press", 10, row + 3));
+  view.handleMouse(mouse("drag", 13, row + 3));
+  view.handleMouse(mouse("release", 13, row + 3));
+  await tick();
+  assert.equal(source.text.slice(opened[0][1], opened[0][2]), "bold");
+  view.invalidate();
+  assert.ok(view.render(80).length);
+});
+
 test("mouse drag selects exact text; click reopens comment; reverse selection works", async () => {
   const source = { id: "a", text: "abcdef" }; const opened = [];
   const comments = [{ id: "c1", messageId: "a", start: 1, end: 3, text: "why", quote: "bc" }];
   const view = new CommentsView(fakeTui(), theme, [source], () => comments, async (...args) => opened.push(args), () => {}, e => { throw e; });
   view.render(80);
-  assert.equal(view.handleMouse(mouse("press", 10, 2)).capture, true);
-  view.handleMouse(mouse("drag", 12, 2)); view.handleMouse(mouse("release", 12, 2)); await tick();
+  assert.equal(view.handleMouse(mouse("press", 11, 3)).capture, true);
+  view.handleMouse(mouse("drag", 13, 3)); view.handleMouse(mouse("release", 13, 3)); await tick();
   assert.deepEqual(opened[0].slice(1, 3), [1, 4]);
-  view.handleMouse(mouse("press", 10, 2)); view.handleMouse(mouse("release", 10, 2)); await tick();
+  view.handleMouse(mouse("press", 11, 3)); view.handleMouse(mouse("release", 11, 3)); await tick();
   assert.equal(opened[1][3].id, "c1");
-  view.handleMouse(mouse("press", 13, 2)); view.handleMouse(mouse("drag", 9, 2)); view.handleMouse(mouse("release", 9, 2)); await tick();
+  view.handleMouse(mouse("press", 14, 3)); view.handleMouse(mouse("drag", 10, 3)); view.handleMouse(mouse("release", 10, 3)); await tick();
   assert.deepEqual(opened[2].slice(1, 3), [0, 5]);
 });
 
@@ -177,9 +219,9 @@ test("fullscreen renderer routes real SGR drag events into the overlay and resto
     tui.start();
     const handle = tui.showOverlay(view, { width: 80, anchor: "top-left" });
     tui.renderNow(true);
-    input("\x1b[<0;11;3M");
-    input("\x1b[<32;13;3M");
-    input("\x1b[<0;13;3m");
+    input("\x1b[<0;12;4M");
+    input("\x1b[<32;14;4M");
+    input("\x1b[<0;14;4m");
     await tick();
     assert.deepEqual(opened[0].slice(1, 3), [1, 4]);
     tui.renderNow(true);

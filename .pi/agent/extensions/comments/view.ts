@@ -1,6 +1,8 @@
-import { Editor, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Editor, Markdown, sliceByColumn, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import { diffChars } from "diff";
+import { stripVTControlCharacters as stripAnsi } from "node:util";
 import type { Comment, SourceMessage } from "./model.ts";
 
 export interface Cell { text: string; start: number; end: number; x: number; width: number }
@@ -31,6 +33,46 @@ export function layout(text: string, width: number): Row[] {
   rows.push(row);
   return rows;
 }
+/** Render with Pi's own Markdown component, then align visible text to source offsets.
+ * Inserted decorations are displayed but never become selectable source text. */
+export function markdownLayout(text: string, width: number): Row[] {
+  const lines = new Markdown(text.trim(), 0, 0, getMarkdownTheme()).render(Math.max(1, width));
+  const plain = lines.map(stripAnsi).join("\n");
+  const offsets = new Int32Array(plain.length).fill(-1);
+  let source = 0, rendered = 0;
+  for (const part of diffChars(text, plain, { timeout: 1000 }) ?? []) {
+    if (part.removed) source += part.value.length;
+    else if (part.added) rendered += part.value.length;
+    else for (let i = 0; i < part.value.length; i++) offsets[rendered++] = source++;
+  }
+  let offset = 0;
+  return lines.map(line => {
+    const cells: Cell[] = [];
+    let x = 0;
+    for (const part of segmenter.segment(stripAnsi(line))) {
+      const size = visibleWidth(part.segment);
+      const start = offsets[offset + part.index];
+      const last = offsets[offset + part.index + part.segment.length - 1];
+      const matched = start >= 0 && text.slice(start, last + 1) === part.segment;
+      cells.push({ text: sliceByColumn(line, x, size, true), x, width: size,
+        start: matched ? start : -1, end: matched ? last + 1 : -1 });
+      x += size;
+    }
+    offset += stripAnsi(line).length + 1;
+    const mapped = cells.filter(c => c.start >= 0);
+    return { cells, start: mapped[0]?.start ?? -1, end: mapped.at(-1)?.end ?? -1 };
+  });
+}
+
+function frame(lines: string[], width: number, theme: Theme): string[] {
+  if (width < 2) return lines.map(line => truncateToWidth(line, width));
+  const inner = width - 2;
+  const border = (s: string) => theme.fg("borderMuted", s);
+  return [border("╭" + "─".repeat(inner) + "╮"),
+    ...lines.map(line => border("│") + truncateToWidth(line, inner, "", true) + "\x1b[0m\x1b]8;;\x1b\\" + border("│")),
+    border("╰" + "─".repeat(inner) + "╯")];
+}
+
 const safe = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 
 export class CommentsView implements Component {
@@ -61,10 +103,11 @@ export class CommentsView implements Component {
   invalidate() { this.cachedText = undefined; }
   private request() { this.tui.requestRender(); }
   private cellAt(x: number, y: number): Cell | undefined {
-    const row = this.rows[Math.max(0, Math.min(this.rows.length - 1, this.top + y - 2))];
+    const row = this.rows[Math.max(0, Math.min(this.rows.length - 1, this.top + y - 3))];
     if (!row?.cells.length) return undefined;
-    const col = x - this.gutter;
-    return row.cells.find(c => col < c.x + c.width) ?? row.cells.at(-1);
+    const col = x - this.gutter - 1;
+    const cells = row.cells.filter(c => c.start >= 0);
+    return cells.find(c => col < c.x + c.width) ?? cells.at(-1);
   }
   private scroll(delta: number) { this.top = Math.max(0, Math.min(Math.max(0, this.rows.length - this.bodyHeight), this.top + delta)); }
   private reveal(offset: number) {
@@ -83,14 +126,14 @@ export class CommentsView implements Component {
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult {
     if (this.busy) return { handled: true };
     if (event.type === "wheel") { this.scroll(event.wheelDelta ?? 0); return { handled: true, render: true }; }
-    if (event.type === "press" && event.button === "left" && event.y >= 2 && event.y < 2 + this.bodyHeight) {
+    if (event.type === "press" && event.button === "left" && event.y >= 3 && event.y < 3 + this.bodyHeight) {
       const cell = this.cellAt(event.x, event.y);
       if (cell) { this.press = { cell, x: event.x, y: event.y }; this.cursor = cell.start; this.selected = undefined; this.activeId = undefined; }
       return { handled: true, capture: true };
     }
     if ((event.type === "drag" || event.type === "release") && this.press) {
-      if (event.y < 2) this.scroll(-1);
-      if (event.y >= 2 + this.bodyHeight) this.scroll(1);
+      if (event.y < 3) this.scroll(-1);
+      if (event.y >= 3 + this.bodyHeight) this.scroll(1);
       const cell = this.cellAt(event.x, event.y) ?? this.press.cell;
       const moved = event.x !== this.press.x || event.y !== this.press.y;
       if (moved || this.selected) this.selected = { start: Math.min(this.press.cell.start, cell.start), end: Math.max(this.press.cell.end, cell.end) };
@@ -124,7 +167,7 @@ export class CommentsView implements Component {
     } else if (matchesKey(data, "pageUp")) this.scroll(-this.bodyHeight);
     else if (matchesKey(data, "pageDown")) this.scroll(this.bodyHeight);
     else {
-      const cells = this.rows.flatMap(r => r.cells);
+      const cells = this.rows.flatMap(r => r.cells).filter(c => c.start >= 0);
       let i = cells.findIndex(c => c.start === this.cursor);
       if (i < 0) i = 0;
       const old = cells[i];
@@ -136,8 +179,14 @@ export class CommentsView implements Component {
       if (direction === "right") i++;
       let target = cells[Math.max(0, Math.min(cells.length - 1, i))];
       if (direction === "up" || direction === "down") {
-        const row = this.rows[Math.max(0, Math.min(this.rows.length - 1, rowIndex + (direction === "up" ? -1 : 1)))];
-        target = row?.cells.find(c => c.x >= (old?.x ?? 0)) ?? row?.cells.at(-1) ?? old;
+        const step = direction === "up" ? -1 : 1;
+        target = old;
+        for (let r = rowIndex + step; r >= 0 && r < this.rows.length; r += step) {
+          const mapped = this.rows[r].cells.filter(c => c.start >= 0);
+          if (!mapped.length) continue;
+          target = mapped.find(c => c.x >= (old?.x ?? 0)) ?? mapped.at(-1)!;
+          break;
+        }
       }
       if (target) {
         this.cursor = target.start; this.activeId = undefined;
@@ -152,14 +201,17 @@ export class CommentsView implements Component {
   }
   render(width: number): string[] {
     this.bodyHeight = Math.max(1, Math.min(32, this.tui.terminal.rows - 8));
-    const contentWidth = Math.max(1, width - this.gutter - 1);
+    const contentWidth = Math.max(1, width - this.gutter - 3);
     if (this.cachedText !== this.source.text || this.cachedWidth !== contentWidth) {
-      this.rows = layout(this.source.text, contentWidth); this.cachedText = this.source.text; this.cachedWidth = contentWidth;
+      this.rows = markdownLayout(this.source.text, contentWidth); this.cachedText = this.source.text; this.cachedWidth = contentWidth;
+      if (!this.rows.some(r => r.cells.some(c => c.start === this.cursor))) {
+        this.cursor = this.rows.flatMap(r => r.cells).find(c => c.start >= 0)?.start ?? 0;
+      }
     }
     this.scroll(0);
     const th = this.theme;
     const local = this.localComments;
-    const lines = [th.fg("accent", ` Comments · response ${this.index + 1}/${this.messages.length} · source Markdown`),
+    const lines = [th.fg("accent", ` Comments · response ${this.index + 1}/${this.messages.length}`),
       th.fg("muted", " [ / ] response · drag to comment · Tab comments · Enter open · Esc close")];
     for (let n = 0; n < this.bodyHeight; n++) {
       const row = this.rows[this.top + n];
@@ -171,8 +223,8 @@ export class CommentsView implements Component {
         const comment = local.find(c => c.start < cell.end && c.end > cell.start);
         const selected = this.selected && this.selected.start < cell.end && this.selected.end > cell.start;
         let value = cell.text;
-        if (selected || cell.start === this.cursor) value = th.style(value, { fg: "text", bg: "selectedBg", bold: true });
-        else if (comment) value = th.style(value, { fg: "text", bg: comment.batchId ? "toolSuccessBg" : "toolPendingBg" });
+        if (selected || cell.start === this.cursor) value = th.bg("selectedBg", value);
+        else if (comment) value = th.bg(comment.batchId ? "toolSuccessBg" : "toolPendingBg", value);
         line += value;
       }
       lines.push(line);
@@ -182,7 +234,7 @@ export class CommentsView implements Component {
     const drafts = this.comments().filter(c => !c.batchId).length;
     const actions = drafts ? " · close then /submit-comments or /cancel-comments" : this.comments().length ? " · close then /cancel-comments" : "";
     lines.push(th.fg("dim", ` ${drafts} drafts${actions} · ${this.top + 1}/${this.rows.length}`));
-    return lines.map(line => truncateToWidth(line, width));
+    return frame(lines, width, th);
   }
 }
 
@@ -218,7 +270,7 @@ export class CommentEditor implements Component {
 
 export class AnswerView implements Component {
   top = 0;
-  private rows: Row[] = [];
+  private rows: string[] = [];
   private height = 10;
   constructor(readonly tui: TUI, readonly theme: Theme, readonly title: string, readonly text: string, readonly done: () => void) {}
   invalidate() {}
@@ -233,9 +285,9 @@ export class AnswerView implements Component {
   handleMouse(event: TuiMouseEvent) { if (event.type === "wheel") this.top += event.wheelDelta ?? 0; return { handled: true, render: true }; }
   render(width: number) {
     this.height = Math.max(1, Math.min(25, this.tui.terminal.rows - 8));
-    this.rows = layout(this.text, Math.max(1, width - 2));
+    this.rows = new Markdown(this.text.trim(), 0, 0, getMarkdownTheme()).render(Math.max(1, width - 4));
     this.top = Math.max(0, Math.min(Math.max(0, this.rows.length - this.height), this.top));
-    return [this.theme.fg("accent", ` ${this.title}`), ...Array.from({ length: this.height }, (_, i) => " " + (this.rows[this.top + i]?.cells.map(c => c.text).join("") ?? "")),
-      this.theme.fg("dim", " ↑/↓ · PgUp/PgDn · wheel · Esc close")].map(line => truncateToWidth(line, width));
+    return frame([this.theme.fg("accent", ` ${this.title}`), ...Array.from({ length: this.height }, (_, i) => " " + (this.rows[this.top + i] ?? "")),
+      this.theme.fg("dim", " ↑/↓ · PgUp/PgDn · wheel · Esc close")], width, this.theme);
   }
 }

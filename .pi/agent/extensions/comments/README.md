@@ -1,10 +1,10 @@
 # Response comments
 
-Local Pi extension using public extension/TUI APIs only. No core patches or additional dependencies. Tested with Pi 1.4.0. Load with `/reload` (or restart Pi).
+Local Pi extension using public extension/TUI APIs only. No core patches. Tested with Pi 1.4.0. Install its source-alignment dependency with `npm ci --prefix ~/.pi/agent/extensions/comments`, then load with `/reload` (or restart Pi).
 
 ## Workflow
 
-1. Run `/comments` while the agent is idle. The overlay opens the latest assistant response as **source Markdown**, not rendered Markdown.
+1. Run `/comments` while the agent is idle. The subtly bordered overlay opens the latest assistant response using the same **Markdown renderer and theme as the main chat** (headings, emphasis, links, lists, tables and highlighted code).
 2. Use `[` / `]` to switch responses on the active session branch.
 3. Drag across text with the mouse (fullscreen mode). Releasing opens a small comment editor.
 4. Enter saves; Shift+Enter inserts a newline; Escape cancels the edit. Saved drafts get a background highlight and a short ID (`c1`, `c2`, …) in the margin.
@@ -19,7 +19,7 @@ Use `/cancel-comments` while idle, after closing the overlay, to discard all act
 
 Keyboard alternative: arrows move the text cursor; Space toggles a selection anchor, then arrows extend it; Shift+arrows also start/extend a selection; Enter opens the comment editor. PageUp/PageDown and the mouse wheel scroll.
 
-Comments are highlighted only in this overlay, not in Pi's main transcript. Text wrapping is grapheme-based. For long mouse selections, drag beyond the upper/lower content edge to scroll on further drag events, or use wheel/keyboard scrolling. There is no timed edge-autoscroll.
+Comments are highlighted only in this overlay, not in Pi's main transcript. Wrapping follows Pi's Markdown renderer. Selection uses grapheme display widths and aligns rendered text with UTF-16 source offsets, preserving exact source quotes. Renderer-inserted decorations have no selectable source range; transformed text (such as LaTeX) may not have a direct source match. Source alignment is bounded to one second; if it exceeds that budget the response remains readable but cannot be selected. For long mouse selections, drag beyond the upper/lower content edge to scroll on further drag events, or use wheel/keyboard scrolling. There is no timed edge-autoscroll.
 
 ## Storage and lifecycle
 
