@@ -179,7 +179,9 @@ export class CommentsView implements Component {
     }
     const active = local.find(c => c.id === this.activeId) ?? this.at(this.cursor);
     lines.push(th.fg("muted", active ? ` ${active.id} · ${active.batchId ? active.answer ? "answered" : "submitted" : "draft"} · ${safe(active.text)}` : " Arrows move · Space/Shift+arrows select · Enter comment · PgUp/PgDn scroll"));
-    lines.push(th.fg("dim", ` ${this.comments().filter(c => !c.batchId).length} drafts · close then /submit-comments · ${this.top + 1}/${this.rows.length}`));
+    const drafts = this.comments().filter(c => !c.batchId).length;
+    const actions = drafts ? " · close then /submit-comments or /cancel-comments" : this.comments().length ? " · close then /cancel-comments" : "";
+    lines.push(th.fg("dim", ` ${drafts} drafts${actions} · ${this.top + 1}/${this.rows.length}`));
     return lines.map(line => truncateToWidth(line, width));
   }
 }

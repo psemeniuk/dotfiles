@@ -59,6 +59,7 @@ test("prompt is deterministic, readable, quotes multiline data, and requests ans
   assert.equal(p, model.buildPrompt(state.comments));
   assert.match(p, /Do not make any changes; only answer/);
   assert.match(p, /language of each comment/);
+  assert.match(p, /repeat the quoted passage and the user's comment/);
   assert.match(p, /### Comment c1/);
   assert.match(p, /> ## Comment c9/);
   assert.doesNotMatch(p, /assistant-1/);
@@ -152,7 +153,7 @@ test("editor focus, save, cancel, delete and answer viewer use real Pi component
 test("Pi loader accepts extension and exposes only intended commands", async () => {
   const result = await loadExtensions([join(root, "index.ts")], process.cwd());
   assert.deepEqual(result.errors, []);
-  assert.deepEqual([...result.extensions[0].commands.keys()].sort(), ["comments", "submit-comments"]);
+  assert.deepEqual([...result.extensions[0].commands.keys()].sort(), ["cancel-comments", "comments", "submit-comments"]);
 });
 
 test("fullscreen renderer routes real SGR drag events into the overlay and restores focus", async () => {
@@ -202,7 +203,7 @@ test("command integration: persist submit, enforce read-only, restore answers, n
     sendUserMessage: prompt => { sent.push(prompt); entries.push(message("user", "user", prompt)); },
   };
   mod.default(pi);
-  const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getBranch: () => entries, getEntries: () => entries }, ui: { setStatus() {}, notify: (...args) => notifications.push(args) } };
+  const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getBranch: () => entries, getEntries: () => entries }, ui: { setStatus() {}, addAutocompleteProvider() {}, notify: (...args) => notifications.push(args) } };
   handlers.get("session_start")({}, ctx);
   await commands.get("submit-comments").handler("", ctx);
   assert.equal(sent.length, 1);
@@ -211,10 +212,74 @@ test("command integration: persist submit, enforce read-only, restore answers, n
   assert.equal(handlers.get("tool_call")({ toolName: "bash" }, ctx).block, true);
   entries.push(message("reply", "assistant", "## Comment c1\nOdpowiedź."));
   handlers.get("agent_end")({}, ctx);
-  assert.equal(model.restore(entries).comments[0].answer, "Odpowiedź.");
+  assert.deepEqual(model.restore(entries), model.emptyState());
+  assert.deepEqual(entries.at(-1).data, model.emptyState());
   handlers.get("agent_settled")({}, ctx);
   assert.equal(handlers.get("tool_call")({}, ctx), undefined);
   await commands.get("submit-comments").handler("", ctx);
   assert.equal(sent.length, 1);
   assert.match(notifications.at(-1)[0], /No draft/);
+});
+
+test("every completed text answer clears drafts; aborted/error/tool-only messages preserve them", () => {
+  const { state } = fixture();
+  const initial = snapshot(state);
+  for (const reason of ["aborted", "error", "toolUse", "length"]) {
+    assert.equal(model.restore([initial, message("a", "assistant", "partial", reason)]).comments.length, 1);
+  }
+  assert.equal(model.restore([initial, message("a", "assistant", "")]).comments.length, 1);
+  assert.deepEqual(model.restore([initial, message("a", "assistant", "An unrelated ordinary answer")]), model.emptyState());
+  assert.deepEqual(model.restore([initial, snapshot(model.emptyState())]), model.emptyState());
+  assert.equal(model.restore([initial]).comments.length, 1); // Tree before reset keeps that historical state.
+  assert.equal(model.nextId([initial, snapshot(model.emptyState())], model.emptyState()), "c2");
+});
+
+test("autocomplete hides unavailable actions dynamically without affecting other completions", async () => {
+  const { commentsAutocomplete } = await jiti.import(join(root, "autocomplete.ts"));
+  let available = { drafts: false, comments: false };
+  const original = {
+    triggerCharacters: ["/"],
+    async getSuggestions() { return { prefix: "/", items: ["comments", "submit-comments", "cancel-comments", "model"].map(value => ({ value, label: value })) }; },
+    applyCompletion() { assert.equal(this, original); return "completed"; },
+    shouldTriggerFileCompletion() { assert.equal(this, original); return true; },
+  };
+  const wrapped = commentsAutocomplete(original, () => available);
+  const suggestions = () => wrapped.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
+  assert.deepEqual((await suggestions()).items.map(i => i.value), ["comments", "model"]);
+  available = { drafts: true, comments: true };
+  assert.equal((await suggestions()).items.length, 4);
+  available.drafts = false;
+  assert.deepEqual((await suggestions()).items.map(i => i.value), ["comments", "cancel-comments", "model"]);
+  assert.equal(wrapped.applyCompletion(), "completed");
+  assert.equal(wrapped.shouldTriggerFileCompletion(), true);
+  assert.equal((await wrapped.getSuggestions(["some-path"], 0, 9, {})).items.length, 4);
+});
+
+test("cancel persists reset, hides footer/actions, and does not send a prompt", async () => {
+  const mod = await jiti.import(join(root, "index.ts"));
+  const commands = new Map(), handlers = new Map(), statuses = [];
+  const { state } = fixture(); const entries = [snapshot(state)];
+  let autocomplete, idle = true;
+  mod.default({
+    registerCommand: (name, command) => commands.set(name, command),
+    on: (name, handler) => handlers.set(name, handler),
+    appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
+    sendUserMessage: () => assert.fail("Cancellation must not submit a prompt"),
+  });
+  const provider = { async getSuggestions() { return { prefix: "/", items: [{ value: "submit-comments" }, { value: "cancel-comments" }] }; }, applyCompletion() {} };
+  const ctx = { mode: "tui", isIdle: () => idle, sessionManager: { getBranch: () => entries, getEntries: () => entries }, ui: {
+    setStatus: (_key, value) => statuses.push(value), notify() {}, addAutocompleteProvider: factory => { autocomplete = factory(provider); },
+  } };
+  handlers.get("session_start")({}, ctx);
+  assert.match(statuses.at(-1), /1 drafts/);
+  idle = false;
+  await commands.get("cancel-comments").handler("", ctx);
+  assert.equal(model.restore(entries).comments.length, 1);
+  idle = true;
+  await commands.get("cancel-comments").handler("", ctx);
+  assert.deepEqual(entries.at(-1).data, model.emptyState());
+  assert.equal(statuses.at(-1), undefined);
+  assert.equal(await autocomplete.getSuggestions(["/"], 0, 1, {}), null);
+  handlers.get("session_start")({}, ctx);
+  assert.equal(statuses.at(-1), undefined);
 });

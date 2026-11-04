@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { addComment, buildPrompt, editComment, emptyState, ENTRY_TYPE, messageText, nextId, reconcile, restore, sources } from "./model.ts";
 import type { Comment, SourceMessage } from "./model.ts";
 import { AnswerView, CommentEditor, CommentsView } from "./view.ts";
+import { commentsAutocomplete } from "./autocomplete.ts";
 
 export default function commentsExtension(pi: ExtensionAPI) {
   let state = emptyState();
@@ -17,13 +18,18 @@ export default function commentsExtension(pi: ExtensionAPI) {
   };
   const refresh = (ctx: ExtensionContext, persist = false) => {
     const entries = ctx.sessionManager.getBranch();
-    state = restore(entries);
     const before = JSON.stringify(state);
+    state = restore(entries);
     reconcile(state, entries);
     if (persist && JSON.stringify(state) !== before) save(ctx);
     else status(ctx);
   };
-  pi.on("session_start", (_event, ctx) => { answering = false; open = false; refresh(ctx); });
+  pi.on("session_start", (_event, ctx) => {
+    answering = false; open = false; refresh(ctx);
+    if (ctx.mode === "tui") ctx.ui.addAutocompleteProvider(current => commentsAutocomplete(current, () => ({
+      drafts: state.comments.some(c => !c.batchId), comments: state.comments.length > 0,
+    })));
+  });
   pi.on("session_tree", (_event, ctx) => { answering = false; refresh(ctx); });
   pi.on("before_agent_start", (event, ctx) => {
     refresh(ctx);
@@ -71,6 +77,18 @@ export default function commentsExtension(pi: ExtensionAPI) {
         await ctx.ui.custom<void>((tui, theme, _kb, done) => new CommentsView(tui, theme, messages, () => state.comments, edit, done,
           error => ctx.ui.notify(String(error), "error")), { overlay: true, overlayOptions: { width: "95%", anchor: "center" } });
       } finally { open = false; }
+    },
+  });
+
+  pi.registerCommand("cancel-comments", {
+    description: "Discard active comments and clear their highlights (chat history is unchanged)",
+    handler: async (_args, ctx) => {
+      if (!ctx.isIdle() || open) { ctx.ui.notify("Close the comments overlay and wait until the agent is idle before cancelling.", "warning"); return; }
+      refresh(ctx);
+      if (!state.comments.length) { ctx.ui.notify("No active comments to cancel.", "info"); return; }
+      state = emptyState();
+      save(ctx);
+      ctx.ui.notify("Comments cancelled. Chat history is unchanged.", "info");
     },
   });
 
